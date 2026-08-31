@@ -14,6 +14,13 @@ Scripts de empacotamento e releases de binários pré-compilados para o **niri**
 - `update-niri-bin.sh` — compila o upstream, publica o `.tar.gz` no GitHub Releases e atualiza o `PKGBUILD` automaticamente.
 - `LICENSE` — licença do código de empacotamento (MIT).
 
+## Créditos
+
+Este repositório é apenas de **empacotamento** e **distribuição** de binários. Todo o crédito pelo aplicativo vai para os autores originais:
+
+- **niri** — o compositor Wayland foi criado por [YaLTeR](https://github.com/YaLTeR/niri).
+- **fork com tearing** — mantido por [urayde](https://github.com/urayde/niri), usado como base deste pacote.
+
 ## Uso
 
 Compilar e criar o pacote localmente:

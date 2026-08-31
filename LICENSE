@@ -1,6 +1,15 @@
 MIT License
 
-Copyright (c) 2026 Bruno do Nascimento
+Copyright (c) 2026 Bruno do Nascimento (empacotamento/AUR scripts)
+
+This repositório contém apenas o código de empacotamento (PKGBUILD e scripts).
+O aplicativo empacotado, niri, é um compositor Wayland originalmente criado por:
+  Copyright (c) YaLTeR (https://github.com/YaLTeR/niri)
+licenciado sob GPL-3.0-or-later, e esta distribuição usa o fork com tearing de:
+  Copyright (c) urayde (https://github.com/urayde/niri)
+Os binários pré-compilados aqui distribuídos são derivados desse código-fonte
+GPL-3.0-or-later, cujos avisos de copyright e termos de licença são preservados.
+Veja o README e https://www.gnu.org/licenses/gpl-3.0.html.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
