@@ -14,7 +14,16 @@ Scripts de empacotamento e releases de binários pré-compilados para o **niri**
 - `update-niri-bin.sh` — compila o upstream (tag oficial), publica o `.tar.gz` no GitHub Releases e atualiza o `PKGBUILD` automaticamente.
 - `niri-tearing-bin-update.sh` — script de atualização instalado em `/usr/local/bin/`: baixa do GitHub, compara com a versão instalada e extrai sobre `/`.
 - `90-niri-tearing-bin.hook` — hook do pacman que roda o updater a cada `pacman -Syu`, mantendo o binário sempre atualizado **sem depender do AUR**.
+- `install.sh` — instalador de um comando: baixa o binário, instala o updater e o hook, e faz o primeiro download.
 - `LICENSE` — licença do código de empacotamento (MIT).
+
+## Instalação em 1 comando
+
+```bash
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/eusouobn/niri-tearing-bin-releases/main/install.sh)"
+```
+
+Isso baixa o binário, instala o updater + hook e configura as atualizações automáticas via `pacman -Syu`.
 
 ## Atualização automática (hook do pacman)
 
