@@ -64,39 +64,42 @@ main() {
     # Apenas root pode instalar em /
     if [ "$(id -u)" -ne 0 ]; then
         fail "Execute como root (sudo)."
-        exit 1
+        # Não-fatal: nunca quebrar o pacman -Syu
+        return 0
     fi
 
     log "Repositório: $REPO"
 
     # Última versão publicada
+    local LATEST=""
     LATEST="$(get_latest_version)"
     if [ -z "$LATEST" ]; then
         warn "Não foi possível consultar a última versão no GitHub. Pulando."
-        exit 0
+        return 0
     fi
     log "Última versão publicada: $LATEST"
 
     # Versão instalada
-    INSTALLED="$(get_installed_version)"
+    local INSTALLED="$(get_installed_version)"
     if [ -n "$INSTALLED" ] && [ "$INSTALLED" = "$LATEST" ]; then
         if [ "$CHECK_ONLY" -eq 1 ]; then
             log "Já na versão mais recente ($INSTALLED)."
         else
             log "Já na versão mais recente ($INSTALLED). Nada a fazer."
         fi
-        exit 0
+        return 0
     fi
 
     if [ "$CHECK_ONLY" -eq 1 ]; then
         log "Nova versão disponível: $LATEST (instalada: ${INSTALLED:-nenhuma})"
-        exit 1
+        return 1
     fi
 
     log "Versão instalada: ${INSTALLED:-nenhuma} → nova: $LATEST"
 
     # Tarball correspondente
-    TARBALL="niri-full-${LATEST}-x86_64.tar.gz"
+    local TARBALL="niri-full-${LATEST}-x86_64.tar.gz"
+    local TMP_DIR TMP_TAR
     TMP_DIR="$(mktemp -d)"
     TMP_TAR="$TMP_DIR/$TARBALL"
 
@@ -106,15 +109,15 @@ main() {
     log "Baixando $TARBALL..."
     if ! require_cmd curl; then
         fail "O pacote 'curl' é necessário para baixar o binário."
-        exit 1
+        return 0
     fi
     curl -fL --retry 3 -o "$TMP_TAR" "$BASE_URL/$LATEST/$TARBALL" \
-        || { fail "Falha ao baixar '$TARBALL'."; exit 1; }
+        || { fail "Falha ao baixar '$TARBALL'."; return 0; }
 
     # Extrai sobre / (mesma estrutura usr/ do tarball)
     log "Instalando arquivos sobre / ..."
     tar -xzf "$TMP_TAR" -C / --overwrite \
-        || { fail "Falha ao extrair o tarball."; exit 1; }
+        || { fail "Falha ao extrair o tarball."; return 0; }
 
     # Marca versão + manifest
     mkdir -p "$PKG_MARK"
@@ -126,6 +129,9 @@ main() {
     if [ -x "$BIN_DST" ]; then
         "$BIN_DST" --version 2>/dev/null | head -n1 || true
     fi
+    return 0
 }
 
 main "$@"
+# Garante saída não-fatal mesmo se --check retornar 1 (nunca quebrar o hook do pacman)
+exit 0
