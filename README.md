@@ -15,6 +15,7 @@ Scripts de empacotamento e releases de binários pré-compilados para o **niri**
 - `niri-tearing-bin-update.sh` — script de atualização instalado em `/usr/local/bin/`: baixa do GitHub, compara com a versão instalada e extrai sobre `/`.
 - `90-niri-tearing-bin.hook` — hook do pacman que roda o updater a cada `pacman -Syu`, mantendo o binário sempre atualizado **sem depender do AUR**.
 - `install.sh` — instalador de um comando: baixa o binário, instala o updater e o hook, e faz o primeiro download.
+- `migrate.sh` — migra com segurança de um niri via AUR (ou `extra`) para o binário pré-compilado (renomeia o atual e instala o novo, trocando no reboot).
 - `LICENSE` — licença do código de empacotamento (MIT).
 
 ## Instalação em 1 comando
@@ -24,6 +25,20 @@ sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/eusouobn/niri-teari
 ```
 
 Isso baixa o binário, instala o updater + hook e configura as atualizações automáticas via `pacman -Syu`.
+
+## Migrar de um niri via AUR / extra
+
+Se você já tem o `niri-tearing-git` (AUR) ou o `niri` (extra) instalado, o `/usr/bin/niri` está em uso e **não pode ser sobrescrito durante a sessão** (erro "Área de texto ocupada"). Use o migrador — ele renomeia o binário atual para backup e instala o pré-compilado, trocando efetivamente no próximo reboot:
+
+```bash
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/eusouobn/niri-tearing-bin-releases/main/migrate.sh)"
+```
+
+Após reiniciar, remova o pacote antigo:
+
+```bash
+sudo pacman -R --noconfirm niri-tearing-git   # ou: niri
+```
 
 ## Atualização automática (hook do pacman)
 
