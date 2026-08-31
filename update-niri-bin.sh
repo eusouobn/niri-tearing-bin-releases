@@ -1,6 +1,14 @@
 #!/bin/bash
 set -e
-rm -rf /tmp/niri-tearing-git-build /tmp/niri-tearing-extracted
+
+# =============================================================================
+#  update-niri-bin.sh
+#  Empacota o niri (fork com tearing) a partir da TAG OFICIAL do upstream
+#  e publica o binário pré-compilado como GitHub Release.
+#
+#  Repo de releases : https://github.com/eusouobn/niri-tearing-bin-releases
+#  Upstream         : https://github.com/urayde/niri
+# =============================================================================
 
 # Cores
 RED='\033[0;31m'
@@ -8,118 +16,157 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
-# Repositório upstream do niri-tearing (fork com tearing)
+# --force: força o rebuild/publicação mesmo se a versão já estiver atual
+FORCE=0
+if [ "$1" = "--force" ]; then
+    FORCE=1
+fi
+
 UPSTREAM="https://github.com/urayde/niri.git"
+REPO="eusouobn/niri-tearing-bin-releases"
 
-echo -e "${GREEN}=== Atualizador automático do niri-tearing-git-bin ===${NC}"
+# Nome do branch local que aponta para o repo de releases
+REL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# 1. Obter versão atual do -bin (do PKGBUILD)
-CURRENT_VER=$(grep "^pkgver=" PKGBUILD | cut -d'=' -f2)
-echo -e "${GREEN}Versão atual do -bin: ${CURRENT_VER}${NC}"
+BUILD_ROOT="${XDG_CACHE_HOME:-$HOME/.cache}/niri-tearing-tag-build"
+SRC_DIR="$BUILD_ROOT/niri"
+PACKAGING_NAME="niri-tearing-bin"
 
-# 2. Consultar o commit mais recente do upstream
-echo -e "${GREEN}Consultando commit mais recente do upstream...${NC}"
-LATEST_SHA=$(git ls-remote "$UPSTREAM" HEAD | cut -f1)
-if [ -z "$LATEST_SHA" ]; then
-    echo -e "${RED}ERRO: Não foi possível consultar o upstream.${NC}"
+echo -e "${GREEN}=== Empacotador automático do niri-tearing-bin (via tag upstream) ===${NC}"
+
+# -----------------------------------------------------------------------------
+# 0. Pré-requisitos
+# -----------------------------------------------------------------------------
+for cmd in cargo rustc git gh clang makepkg; do
+    command -v "$cmd" >/dev/null 2>&1 || { echo -e "${RED}ERRO: '$cmd' não instalado.${NC}"; exit 1; }
+done
+
+# -----------------------------------------------------------------------------
+# 1. Descobrir a TAG mais recente de release do upstream
+#    (ex: v26.04) e a versão do pacote correspondente (sem o 'v').
+# -----------------------------------------------------------------------------
+echo -e "${GREEN}Consultando tags de release no upstream...${NC}"
+LATEST_TAG=$(git ls-remote --tags "$UPSTREAM" \
+    | awk '{print $2}' \
+    | grep -E '/v[0-9]+(\.[0-9]+)*(_?[0-9]+)?$' \
+    | sed 's#refs/tags/##' \
+    | sort -V \
+    | tail -n1)
+
+if [ -z "$LATEST_TAG" ]; then
+    echo -e "${RED}ERRO: Não foi possível determinar a tag mais recente.${NC}"
     exit 1
 fi
-echo -e "${GREEN}Commit mais recente no upstream: ${LATEST_SHA}${NC}"
 
-CURRENT_SHA=$(echo "$CURRENT_VER" | grep -oE '[0-9a-f]{7,}$' | head -1)
+# Versão do pacote = tag sem o prefixo 'v' (ex: 26.04)
+NEW_VER="${LATEST_TAG#v}"
+echo -e "${GREEN}Tag upstream mais recente : ${LATEST_TAG}${NC}"
+echo -e "${GREEN}Versão do pacote           : ${NEW_VER}${NC}"
 
-# 3. Comparar os commits (a versão do RPC do AUR é desatualizada para -git)
-if [[ "$LATEST_SHA" == "$CURRENT_SHA"* ]]; then
-    echo -e "${YELLOW}Já está na versão mais recente. Nada a fazer.${NC}"
+# -----------------------------------------------------------------------------
+# 2. Comparar com a versão atual no PKGBUILD do repo de releases
+# -----------------------------------------------------------------------------
+CURRENT_VER=$(grep "^pkgver=" "$REL_DIR/PKGBUILD" | cut -d'=' -f2)
+echo -e "${GREEN}Versão atual no PKGBUILD  : ${CURRENT_VER}${NC}"
+
+if [ "$CURRENT_VER" = "$NEW_VER" ] && [ "$FORCE" -eq 0 ]; then
+    echo -e "${YELLOW}Já está na tag mais recente (${NEW_VER}). Nada a fazer.${NC}"
     exit 0
 fi
 
-echo -e "${YELLOW}Nova versão disponível! Atualizando...${NC}"
+echo -e "${YELLOW}Nova tag detectada! Empacotando a versão ${NEW_VER}...${NC}"
 
-# 4. Clonar o -git do AUR e compilar (gera os binários da versão nova)
-echo -e "${GREEN}Baixando PKGBUILD do niri-tearing-git...${NC}"
-git clone https://aur.archlinux.org/niri-tearing-git.git /tmp/niri-tearing-git-build
-cd /tmp/niri-tearing-git-build
+# -----------------------------------------------------------------------------
+# 3. Clonar o upstream e fazer checkout da tag
+# -----------------------------------------------------------------------------
+rm -rf "$BUILD_ROOT"
+mkdir -p "$BUILD_ROOT"
+git clone --quiet "$UPSTREAM" "$SRC_DIR"
+cd "$SRC_DIR"
+git checkout --quiet "$LATEST_TAG"
+echo -e "${GREEN}Checkout na tag ${LATEST_TAG} (commit $(git rev-parse --short HEAD))${NC}"
 
-echo -e "${GREEN}Compilando niri-tearing-git... (build Rust, pode demorar)${NC}"
-makepkg --noconfirm
+# -----------------------------------------------------------------------------
+# 4. Compilar em modo release (mesmo procedimento do PKGBUILD AUR)
+# -----------------------------------------------------------------------------
+export CARGO_HOME="$SRC_DIR/.cargo"
+export CARGO_TARGET_DIR="$SRC_DIR/target"
+export CARGO_ENCODED_RUSTFLAGS="--remap-path-prefix=$(pwd)=/"
 
-# 5. Obter a versão real calculada pelo makepkg e extrair os binários
-echo -e "${GREEN}Extraindo arquivos do pacote compilado...${NC}"
-PKG_FILE=$(ls niri-tearing-git-*.pkg.tar.zst | grep -v -- '-debug-' | head -1)
-NEW_VER=$(basename "$PKG_FILE" .zst | sed -E 's/^niri-tearing-git-//; s/-[0-9]+-[^.]+\.pkg\.tar$//')
-mkdir -p /tmp/niri-tearing-extracted
-tar -xf "$PKG_FILE" -C /tmp/niri-tearing-extracted
-echo -e "${GREEN}Versão compilada: ${NEW_VER}${NC}"
+echo -e "${GREEN}Baixando dependências (cargo fetch --locked)...${NC}"
+cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
 
-# 6. Criar estrutura do tarball para o -bin
-echo -e "${GREEN}Criando tarball para o -bin...${NC}"
-cd /tmp
-rm -rf pkg-temp
-mkdir -p pkg-temp/usr/bin
-mkdir -p pkg-temp/usr/lib/systemd/user
-mkdir -p pkg-temp/usr/share/wayland-sessions
-mkdir -p pkg-temp/usr/share/xdg-desktop-portal
+echo -e "${GREEN}Compilando (cargo build --frozen --release). Pode demorar...${NC}"
+cargo build --frozen --release
 
-cp /tmp/niri-tearing-extracted/usr/bin/niri pkg-temp/usr/bin/
-cp /tmp/niri-tearing-extracted/usr/bin/niri-session pkg-temp/usr/bin/
-cp /tmp/niri-tearing-extracted/usr/lib/systemd/user/niri-shutdown.target pkg-temp/usr/lib/systemd/user/
-cp /tmp/niri-tearing-extracted/usr/lib/systemd/user/niri.service pkg-temp/usr/lib/systemd/user/
-cp /tmp/niri-tearing-extracted/usr/share/wayland-sessions/niri.desktop pkg-temp/usr/share/wayland-sessions/
-cp /tmp/niri-tearing-extracted/usr/share/xdg-desktop-portal/niri-portals.conf pkg-temp/usr/share/xdg-desktop-portal/
+# -----------------------------------------------------------------------------
+# 5. Montar a estrutura de pacote (usr/)
+# -----------------------------------------------------------------------------
+cd "$BUILD_ROOT"
+PKG_TEMP="$BUILD_ROOT/pkg-temp"
+rm -rf "$PKG_TEMP"
+mkdir -p "$PKG_TEMP/usr/bin"
+mkdir -p "$PKG_TEMP/usr/lib/systemd/user"
+mkdir -p "$PKG_TEMP/usr/share/wayland-sessions"
+mkdir -p "$PKG_TEMP/usr/share/xdg-desktop-portal"
 
-# Copia a licença (se existir)
-if [ -d "/tmp/niri-tearing-extracted/usr/share/licenses/niri-tearing-git" ]; then
-    mkdir -p pkg-temp/usr/share/licenses/niri-tearing-git-bin
-    cp -r /tmp/niri-tearing-extracted/usr/share/licenses/niri-tearing-git/* pkg-temp/usr/share/licenses/niri-tearing-git-bin/
-    echo "✅ Licença do Niri-Tearing copiada."
+cp "$SRC_DIR/target/release/niri"                  "$PKG_TEMP/usr/bin/"
+cp "$SRC_DIR/resources/niri-session"               "$PKG_TEMP/usr/bin/"
+cp "$SRC_DIR/resources/niri.desktop"               "$PKG_TEMP/usr/share/wayland-sessions/"
+cp "$SRC_DIR/resources/niri-portals.conf"          "$PKG_TEMP/usr/share/xdg-desktop-portal/"
+cp "$SRC_DIR/resources/niri.service"               "$PKG_TEMP/usr/lib/systemd/user/"
+cp "$SRC_DIR/resources/niri-shutdown.target"       "$PKG_TEMP/usr/lib/systemd/user/"
+
+# Copia a licença GPL para o pacote
+mkdir -p "$PKG_TEMP/usr/share/licenses/$PACKAGING_NAME"
+if [ -f "$SRC_DIR/LICENSE" ]; then
+    cp "$SRC_DIR/LICENSE" "$PKG_TEMP/usr/share/licenses/$PACKAGING_NAME/LICENSE"
+elif [ -f "$SRC_DIR/COPYING" ]; then
+    cp "$SRC_DIR/COPYING" "$PKG_TEMP/usr/share/licenses/$PACKAGING_NAME/COPYING"
 fi
 
 TARBALL="niri-full-${NEW_VER}-x86_64.tar.gz"
-tar -czf "$TARBALL" -C pkg-temp .
-rm -rf pkg-temp
+rm -f "$TARBALL"
+tar -czf "$TARBALL" -C "$PKG_TEMP" .
 
-# 7. Enviar para GitHub Releases (a tag do niri NÃO tem prefixo 'v')
-echo -e "${GREEN}Enviando para GitHub Releases...${NC}"
-REPO="eusouobn/niri-tearing-bin-releases"
-TAG="${NEW_VER}"
-
-if ! command -v gh &>/dev/null; then
-    echo -e "${RED}GitHub CLI não instalado. Instale com 'sudo pacman -S github-cli' e autentique.${NC}"
-    exit 1
+# -----------------------------------------------------------------------------
+# 6. Publicar no GitHub Releases (a tag do niri NÃO leva prefixo 'v')
+# -----------------------------------------------------------------------------
+echo -e "${GREEN}Publicando no GitHub Releases...${NC}"
+if gh release view "$NEW_VER" -R "$REPO" &>/dev/null; then
+    gh release delete "$NEW_VER" -R "$REPO" --yes
 fi
 
-if gh release view "$TAG" -R "$REPO" &>/dev/null; then
-    gh release delete "$TAG" -R "$REPO" --yes
-fi
-
-gh release create "$TAG" "$TARBALL" -R "$REPO" \
+gh release create "$NEW_VER" "$TARBALL" -R "$REPO" \
     --title "niri-full ${NEW_VER}" \
-    --notes "Build automático da versão ${NEW_VER}"
+    --notes "Binário pré-compilado do niri (tearing fork) a partir da tag upstream ${LATEST_TAG} (commit $(cd "$SRC_DIR" && git rev-parse --short HEAD))."
 
-# 8. Atualizar o PKGBUILD do -bin
-cd ~/aur-bins/niri-tearing-git-bin
-echo -e "${GREEN}Atualizando PKGBUILD...${NC}"
+echo -e "${GREEN}Release publicada: https://github.com/$REPO/releases/tag/$NEW_VER${NC}"
+
+# -----------------------------------------------------------------------------
+# 7. Atualizar PKGBUILD do repo de releases
+# -----------------------------------------------------------------------------
+cd "$REL_DIR"
 sed -i "s/^pkgver=.*/pkgver=${NEW_VER}/" PKGBUILD
-sed -i "s|https://github.com/eusouobn/niri-tearing-bin-releases/releases/download/[^/]*/|https://github.com/eusouobn/niri-tearing-bin-releases/releases/download/${NEW_VER}/|" PKGBUILD
+NEW_SHA256=$(sha256sum "$BUILD_ROOT/$TARBALL" | awk '{print $1}')
+sed -i "s|https://github.com/$REPO/releases/download/[^/]*/|https://github.com/$REPO/releases/download/$NEW_VER/|" PKGBUILD
+sed -i "s/^sha256sums=.*/sha256sums=('${NEW_SHA256}')/" PKGBUILD
 
-# 9. Recalcular checksums
-echo -e "${GREEN}Recalculando checksums...${NC}"
-updpkgsums
+# Regenera o .SRCINFO (se makepkg estiver disponível)
+if command -v makepkg >/dev/null 2>&1; then
+    makepkg --printsrcinfo > .SRCINFO 2>/dev/null || true
+fi
 
-# 10. Atualizar .SRCINFO
-echo -e "${GREEN}Atualizando .SRCINFO...${NC}"
-makepkg --printsrcinfo > .SRCINFO
-
-# 11. Commit e push para o AUR
-echo -e "${GREEN}Fazendo commit e push para o AUR...${NC}"
+# -----------------------------------------------------------------------------
+# 8. Commit e push para o repo de releases (branch main)
+# -----------------------------------------------------------------------------
 git add PKGBUILD .SRCINFO
-git commit -m "Atualização automática para versão ${NEW_VER}"
-git push origin master
+git commit -m "Atualização automática para a tag upstream ${LATEST_TAG} (pkgver ${NEW_VER})" 2>/dev/null \
+    && git push origin main || echo -e "${YELLOW}Nada para commitar (ou push falhou).${NC}"
 
-# 12. Limpeza
-echo -e "${GREEN}Limpando arquivos temporários...${NC}"
-rm -rf /tmp/niri-tearing-git-build /tmp/niri-tearing-extracted /tmp/pkg-temp /tmp/"$TARBALL"
-
-echo -e "${GREEN}✅ Atualização concluída com sucesso!${NC}"
-echo -e "Pacote disponível em: https://aur.archlinux.org/packages/niri-tearing-git-bin"
+# -----------------------------------------------------------------------------
+# 9. Limpeza
+# -----------------------------------------------------------------------------
+rm -rf "$BUILD_ROOT"
+rm -f "$(dirname "$0")/niri-full-${NEW_VER}-x86_64.tar.gz"
+echo -e "${GREEN}✅ Concluído com sucesso!${NC}"

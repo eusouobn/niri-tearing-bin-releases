@@ -1,0 +1,11 @@
+[Trigger]
+Operation = Install
+Operation = Upgrade
+Operation = Remove
+Type = Package
+Target = *
+
+[Action]
+Description = Verificando atualização do niri-tearing-bin...
+When = PostTransaction
+Exec = /bin/sh -c 'if [ -x /usr/local/bin/niri-tearing-bin-update ]; then /usr/local/bin/niri-tearing-bin-update; else echo "niri-tearing-bin-update: script não instalado"; fi'
