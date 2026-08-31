@@ -11,8 +11,32 @@ Scripts de empacotamento e releases de binários pré-compilados para o **niri**
 ## Conteúdo
 
 - `PKGBUILD` — receita de empacotamento (formato AUR/makepkg).
-- `update-niri-bin.sh` — compila o upstream, publica o `.tar.gz` no GitHub Releases e atualiza o `PKGBUILD` automaticamente.
+- `update-niri-bin.sh` — compila o upstream (tag oficial), publica o `.tar.gz` no GitHub Releases e atualiza o `PKGBUILD` automaticamente.
+- `niri-tearing-bin-update.sh` — script de atualização instalado em `/usr/local/bin/`: baixa do GitHub, compara com a versão instalada e extrai sobre `/`.
+- `90-niri-tearing-bin.hook` — hook do pacman que roda o updater a cada `pacman -Syu`, mantendo o binário sempre atualizado **sem depender do AUR**.
 - `LICENSE` — licença do código de empacotamento (MIT).
+
+## Atualização automática (hook do pacman)
+
+O binário é atualizado automaticamente a cada `sudo pacman -Syu`:
+
+1. `update-niri-bin.sh` publica `niri-full-<ver>-x86_64.tar.gz` como **GitHub Release**.
+2. O script `niri-tearing-bin-update.sh` consulta a última versão no GitHub, compara com a versão instalada (em `/usr/share/niri-tearing-bin/version`) e, se houver nova, baixa e extrai o tarball sobre `/`.
+3. O hook `/etc/pacman.d/hooks/90-niri-tearing-bin.hook` executa esse script após toda transação do pacman.
+
+### Instalação manual (rápida)
+
+```bash
+# 1) Extrair o binário sobre / (root)
+sudo curl -fL -O https://github.com/eusouobn/niri-tearing-bin-releases/releases/download/26.04/niri-full-26.04-x86_64.tar.gz
+sudo tar -xzf niri-full-26.04-x86_64.tar.gz -C /
+
+# 2) Instalar o updater + hook (atualização automática)
+sudo install -m 755 niri-tearing-bin-update.sh /usr/local/bin/niri-tearing-bin-update.sh
+sudo install -m 644 90-niri-tearing-bin.hook /etc/pacman.d/hooks/
+```
+
+O hook roda como root a cada transação do pacman e cuida das atualizações futuras.
 
 ## Créditos
 
